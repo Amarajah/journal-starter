@@ -37,3 +37,14 @@ This is additional reference material for the capstone in case you want to explo
 ## License
 
 MIT License - see [LICENSE](LICENSE).
+
+
+```mermaid
+flowchart LR
+  user([Internet user]) -->|"HTTPS 443 (public path)"| cf[CloudFront]
+  cf -->|"HTTP 8000, CloudFront IPs only"| app[API instance: public subnet]
+  app -->|"TLS 5432, app security group only (private path)"| db[(RDS PostgreSQL: private subnets)]
+  app -->|"HTTPS 443"| llm[Gemini API]
+  admin([Administrator]) -->|"IAM-authenticated Session Manager (admin path)"| app
+```
+
