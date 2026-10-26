@@ -111,6 +111,7 @@ async def analyze_journal_entry(
 
         response = await client.chat.completions.create(
             model=get_settings().openai_model,
+            reasoning_effort="low",
             messages=[
                 {"role": "system", "content": analysis_instructions},
                 {"role": "user", "content": entry_text},
@@ -123,6 +124,7 @@ async def analyze_journal_entry(
                     "schema": analysis_schema,
                 },
             },
+            timeout=25,
         )
 
         if not response.choices:
