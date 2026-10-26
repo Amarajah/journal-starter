@@ -12,7 +12,7 @@ from scripts import verify_llm
 
 pytestmark = pytest.mark.no_db
 PRIVATE_MARKER = "fake-private-diagnostic-marker"
-PROVIDER_REQUEST = Request("POST", "https://example.invalid/v1/responses")
+PROVIDER_REQUEST = Request("POST", "https://example.invalid/v1/chat/completions")
 
 
 @pytest.fixture
