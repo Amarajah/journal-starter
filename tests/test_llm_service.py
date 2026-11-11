@@ -35,23 +35,17 @@ ANALYSES = [
 
 def make_response(output_text: str) -> dict:
     return {
-        "id": "resp_test",
-        "created_at": 0,
+        "id": "chatcmpl_test",
+        "object": "chat.completion",
+        "created": 0,
         "model": "test-model",
-        "object": "response",
-        "status": "completed",
-        "output": [
+        "choices": [
             {
-                "id": "msg_test",
-                "role": "assistant",
-                "status": "completed",
-                "type": "message",
-                "content": [{"annotations": [], "text": output_text, "type": "output_text"}],
+                "index": 0,
+                "message": {"role": "assistant", "content": output_text, "refusal": None},
+                "finish_reason": "stop",
             }
         ],
-        "parallel_tool_calls": False,
-        "tool_choice": "auto",
-        "tools": [],
     }
 
 
@@ -64,7 +58,7 @@ async def provider_client():
 
         def respond(request: httpx.Request):
             assert request.method == "POST"
-            assert request.url.path == "/v1/responses"
+            assert request.url.path == "/v1/chat/completions"
             requests.append(json.loads(request.content))
             return httpx.Response(status, json=payload)
 
@@ -112,12 +106,15 @@ class TestAnalysisImplementation:
         assert len(requests) == 1
         request = requests[0]
         assert request["model"] == get_settings().openai_model
-        assert SAMPLE_ENTRY_TEXT in json.dumps(request["input"])
-        output_format = request["text"]["format"]
+        assert SAMPLE_ENTRY_TEXT in json.dumps(request["messages"])
+        output_format = request["response_format"]
         assert output_format["type"] in {"json_schema", "json_object"}
+
         if output_format["type"] == "json_schema":
-            schema = output_format["schema"]
-            assert output_format["strict"] is True
+            json_schema = output_format["json_schema"]
+            schema = json_schema["schema"]
+
+            assert json_schema["strict"] is True
             assert schema["type"] == "object"
             assert set(schema["properties"]) == {"sentiment", "summary", "topics"}
             assert set(schema["required"]) == {"sentiment", "summary", "topics"}
@@ -178,21 +175,32 @@ class TestAnalysisImplementation:
         with pytest.raises((ValidationError, InvalidAnalysisResponseError)):
             await analyze_journal_entry("entry-1", SAMPLE_ENTRY_TEXT, client=client)
 
-    @pytest.mark.parametrize("kind", ["incomplete", "refusal", "no-output", "empty", "whitespace"])
+    @pytest.mark.parametrize(
+        "kind",
+        ["incomplete", "refusal", "no-output", "empty", "whitespace"],
+    )
     async def test_unusable_provider_response_fails(self, provider_client, kind):
         payload = make_response(json.dumps(ANALYSES[0]))
+
         if kind == "incomplete":
-            payload["status"] = "incomplete"
-            payload["incomplete_details"] = {"reason": "max_output_tokens"}
+            payload["choices"][0]["finish_reason"] = "length"
         elif kind == "refusal":
-            payload["output"][0]["content"] = [{"type": "refusal", "refusal": "Cannot comply"}]
+            payload["choices"][0]["message"]["refusal"] = "Cannot comply"
+            payload["choices"][0]["message"]["content"] = None
         elif kind == "no-output":
-            payload["output"] = []
+            payload["choices"] = []
         else:
-            payload["output"][0]["content"][0]["text"] = "" if kind == "empty" else " \t\n "
+            payload["choices"][0]["message"]["content"] = "" if kind == "empty" else " \t\n "
+
         client, _ = provider_client(payload)
+
         with pytest.raises(InvalidAnalysisResponseError):
-            await analyze_journal_entry("entry-1", SAMPLE_ENTRY_TEXT, client=client)
+            await analyze_journal_entry(
+                "entry-1",
+                SAMPLE_ENTRY_TEXT,
+                client=client,
+            )
+
         assert not client.is_closed()
 
     @pytest.mark.parametrize("outcome", ["success", "invalid-json", "provider-error"])
