@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from openai import APIStatusError, APITimeoutError, OpenAIError, RateLimitError
+from opentelemetry import metrics, trace
 from pydantic import ValidationError
 
 from api.models.entry import (
@@ -22,6 +23,12 @@ from api.services.llm_service import InvalidAnalysisResponseError, analyze_journ
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+tracer = trace.get_tracer("journal-api")
+meter = metrics.get_meter("journal-api")
+entries_created = meter.create_counter(
+    "journal.entries.created", unit="1", description="Journal entries created"
+)
 
 
 async def get_database(request: Request) -> DatabaseInterface:
@@ -58,7 +65,10 @@ async def create_entry(
     entry_data: EntryCreate, entry_service: EntryServiceDependency
 ) -> EntryCreatedResponse:
     """Create a new journal entry."""
-    created_entry = await entry_service.create_entry(entry_data)
+    with tracer.start_as_current_span("db.insert_entry"):
+        created_entry = await entry_service.create_entry(entry_data)
+    entries_created.add(1)
+    logger.info("Journal entry created")
     return EntryCreatedResponse(detail="Entry created successfully", entry=created_entry)
 
 
@@ -122,7 +132,9 @@ async def analyze_entry(entry_id: str, entry_service: EntryServiceDependency) ->
     entry_text = f"{entry.work} {entry.struggle} {entry.intention}"
 
     try:
-        analysis = await analyze_journal_entry(entry_id, entry_text)
+        with tracer.start_as_current_span("llm.analyze") as span:
+            span.set_attribute("entry.id", entry_id)
+            analysis = await analyze_journal_entry(entry_id, entry_text)
         return AnalysisResponse.model_validate(analysis)
     except NotImplementedError as e:
         raise HTTPException(
