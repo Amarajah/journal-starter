@@ -1,0 +1,19 @@
+# Provider binaries and local working data
+.terraform/
+
+# State can contain sensitive values and must never be committed
+*.tfstate
+*.tfstate.*
+
+# Real variable values stay local; the .example file is committed
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+
+# Terraform crash logs and local overrides
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
