@@ -161,10 +161,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up emulation and buildx
-        run: |
-          docker run --privileged --rm tonistiivi/binfmt --install arm64
-          docker buildx create --use
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Build image (push only on main)
         env:
@@ -173,11 +171,11 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}"
-          PLATFORMS="linux/amd64"
-          ARGS=(--tag "$IMAGE" --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}")
+          ARGS=(--platform linux/amd64 --tag "$IMAGE" --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}")
+
           if [ "$EVENT" = "push" ]; then
             echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-            PLATFORMS="linux/amd64,linux/arm64"
             ARGS+=(--push)
           fi
-          docker buildx build --platform "$PLATFORMS" "${ARGS[@]}" .
+
+          docker buildx build "${ARGS[@]}" .
