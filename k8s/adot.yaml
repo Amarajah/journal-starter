@@ -15,7 +15,7 @@ data:
       batch: {}
     exporters:
       debug:
-        verbosity: basic
+        verbosity: detailed
       awsxray:
         region: eu-north-1
       awsemf:
@@ -33,7 +33,7 @@ data:
         traces:
           receivers: [otlp]
           processors: [batch]
-          exporters: [awsxray]
+          exporters: [awsxray, debug]
         metrics:
           receivers: [otlp]
           processors: [batch]

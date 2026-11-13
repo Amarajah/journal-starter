@@ -21,3 +21,6 @@ EXPOSE 8000
 
 # Start FastAPI
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
