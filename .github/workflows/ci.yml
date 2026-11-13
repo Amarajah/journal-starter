@@ -151,7 +151,7 @@ jobs:
       - name: Run selected task and preceding exercises
         run: uv run python -m scripts.ci_tests --event "$GITHUB_EVENT_PATH"
         
-    build:
+  build:
     name: build
     needs: test
     runs-on: ubuntu-latest
