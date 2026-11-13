@@ -1,0 +1,30 @@
+{
+  "servers": {
+    "aws-mcp": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-proxy-for-aws-cli@latest",
+        "https://aws-mcp.us-east-1.api.aws/mcp",
+        "--metadata",
+        "AWS_REGION=eu-north-1"
+      ]
+    },
+    
+    "cloudwatch": {
+    "type": "stdio",
+    "command": "/Users/nayohmee/.local/bin/uvx",
+    "args": [
+        "--with",
+        "mcp[cli]<2",
+        "--from",
+        "awslabs.cloudwatch-mcp-server==0.1.5",
+        "awslabs.cloudwatch-mcp-server"
+    ],
+    "env": {
+        "AWS_REGION": "eu-north-1",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+    }
+    }
+  }
+}
