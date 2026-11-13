@@ -150,6 +150,7 @@ jobs:
 
       - name: Run selected task and preceding exercises
         run: uv run python -m scripts.ci_tests --event "$GITHUB_EVENT_PATH"
+        
   build:
     name: build
     needs: test
@@ -160,20 +161,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Build Docker image
-        run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}"
-          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
-          docker build \
-            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
-            --tag "$IMAGE" .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push'
+      - name: Build image (push only on main)
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          ACTOR: ${{ github.actor }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}"
+          ARGS=(--platform linux/amd64 --tag "$IMAGE" --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}")
 
-      - name: Push Docker image
-        if: github.event_name == 'push'
-        run: docker push "$IMAGE"
+          if [ "$EVENT" = "push" ]; then
+            echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+            ARGS+=(--push)
+          fi
+
+          docker buildx build "${ARGS[@]}" .

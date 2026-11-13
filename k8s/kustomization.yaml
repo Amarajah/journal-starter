@@ -1,0 +1,7 @@
+resources:
+  - postgres.yaml
+  - deployment.yaml
+images:
+  - name: journal-api
+    newName: journal-api
+    newTag: local
