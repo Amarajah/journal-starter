@@ -194,6 +194,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Show OIDC claims (debug, remove afterwards)
+        run: |
+          python3 - <<'PY'
+          import os, json, base64, urllib.request
+          req = urllib.request.Request(
+              os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com",
+              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          token = json.load(urllib.request.urlopen(req))["value"]
+          payload = token.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+          print(json.dumps({k: claims.get(k) for k in ("sub", "aud", "repository", "ref", "environment")}, indent=2))
+          PY
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
