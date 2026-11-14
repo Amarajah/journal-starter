@@ -12,35 +12,13 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a run on main halfway through publishing or deploying
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  AWS_REGION: eu-north-1
 
 jobs:
-  lint:
-    name: Code quality
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.14
-
-      - name: Install dependencies
-        run: uv sync --locked
-
-      - name: Ruff check
-        run: uv run ruff check .
-
-      - name: Ruff format check
-        run: uv run ruff format --check .
-
-      - name: Pyright type check
-        run: uv run pyright
-
   test:
     name: test
     runs-on: ubuntu-latest
@@ -86,6 +64,15 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --locked
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Pyright type check
+        run: uv run pyright
 
       - name: Initialize application and test databases
         run: |
@@ -150,32 +137,133 @@ jobs:
 
       - name: Run selected task and preceding exercises
         run: uv run python -m scripts.ci_tests --event "$GITHUB_EVENT_PATH"
-        
+
   build:
     name: build
     needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      id-token: write   # lets the job request an AWS login token (OIDC)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Configure AWS credentials (push only)
+        if: github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Build image (push only on main)
         env:
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ACTOR: ${{ github.actor }}
           EVENT: ${{ github.event_name }}
+          ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}"
-          ARGS=(--platform linux/amd64 --tag "$IMAGE" --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}")
-
           if [ "$EVENT" = "push" ]; then
-            echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-            ARGS+=(--push)
+            IMAGE="${ECR_REPOSITORY_URL}:${GITHUB_SHA}"
+            aws ecr get-login-password --region "$AWS_REGION" \
+              | docker login --username AWS --password-stdin "${ECR_REPOSITORY_URL%%/*}"
+            ARGS=(--push)
+          else
+            IMAGE="journal-api:pr-${GITHUB_SHA}"   # built locally on the runner, never published
+            ARGS=()
           fi
 
-          docker buildx build "${ARGS[@]}" .
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg "GIT_SHA=${GITHUB_SHA}" \
+            --tag "$IMAGE" \
+            "${ARGS[@]}" \
+            .
+
+  deploy:
+    name: deploy
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ vars.PUBLIC_HOST }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Connect to the cluster
+        env:
+          CLUSTER: ${{ vars.EKS_CLUSTER_NAME }}
+        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+
+      - name: Create secrets and load the database schema
+        env:
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_SECRET_ARN: ${{ vars.DB_SECRET_ARN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+        run: |
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET_ARN" --query SecretString --output text)
+          DB_USER=$(echo "$SECRET_JSON" | jq -r .username)
+          DB_PASS=$(echo "$SECRET_JSON" | jq -r .password)
+          DB_PASS_ENC=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$DB_PASS")
+          echo "::add-mask::$DB_PASS"
+          echo "::add-mask::$DB_PASS_ENC"
+
+          kubectl create secret generic journal-secrets \
+            --from-literal=DATABASE_URL="postgresql://${DB_USER}:${DB_PASS_ENC}@${DB_HOST}:5432/career_journal" \
+            --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
+            --from-literal=OPENAI_BASE_URL="$OPENAI_BASE_URL" \
+            --from-literal=OPENAI_MODEL="$OPENAI_MODEL" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create configmap db-schema --from-file=database_setup.sql \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl delete job db-init --ignore-not-found --wait=true
+          kubectl apply -f k8s/db-init-job.yaml
+          kubectl wait --for=condition=complete job/db-init --timeout=180s || {
+            kubectl logs job/db-init || true
+            exit 1
+          }
+
+      - name: Deploy the new image
+        env:
+          ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+          PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
+          CLUSTER_ISSUER: ${{ vars.CLUSTER_ISSUER }}
+        run: |
+          cd k8s
+          sed -i "s|__IMAGE_REPO__|${ECR_REPOSITORY_URL}|; s|__IMAGE_TAG__|${GITHUB_SHA}|" kustomization.yaml
+          sed -i "s|__PUBLIC_HOST__|${PUBLIC_HOST}|g; s|__CLUSTER_ISSUER__|${CLUSTER_ISSUER}|" ingress.yaml
+          kubectl apply -k .
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/journal-api --timeout=300s
+
+      - name: Confirm the live commit
+        env:
+          PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
+          CLUSTER_ISSUER: ${{ vars.CLUSTER_ISSUER }}
+        run: |
+          OPTS=""
+          if [ "$CLUSTER_ISSUER" = "letsencrypt-staging" ]; then OPTS="-k"; fi
+          for i in $(seq 1 30); do
+            COMMIT=$(curl -fsS $OPTS "https://${PUBLIC_HOST}/version" | jq -r .commit || true)
+            if [ "$COMMIT" = "$GITHUB_SHA" ]; then
+              echo "Live commit matches $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Live commit did not match $GITHUB_SHA"
+          exit 1

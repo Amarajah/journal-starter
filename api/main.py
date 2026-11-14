@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -34,3 +35,8 @@ app = FastAPI(
 )
 app.include_router(journal_router)
 setup_telemetry(app)
+
+
+@app.get("/version")
+def version() -> dict[str, str]:
+    return {"commit": os.environ.get("GIT_SHA", "unknown")}

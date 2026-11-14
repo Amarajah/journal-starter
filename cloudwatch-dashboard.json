@@ -1,0 +1,64 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "HTTP Active Requests",
+        "view": "timeSeries",
+        "region": "eu-north-1",
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{JournalAPI,OTelLib} MetricName=\"http.server.active_requests\"', 'Average', 60)",
+              "id": "e1",
+              "label": "Active Requests"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "HTTP Request Duration",
+        "view": "timeSeries",
+        "region": "eu-north-1",
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{JournalAPI,service.name} MetricName=\"http.server.duration\"', 'Average', 60)",
+              "id": "e1",
+              "label": "Average Request Duration"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "HTTP Response Size",
+        "view": "timeSeries",
+        "region": "eu-north-1",
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{JournalAPI,service.instance.id} MetricName=\"http.server.response.size\"', 'Average', 60)",
+              "id": "e1",
+              "label": "Average Response Size"
+            }
+          ]
+        ]
+      }
+    }
+  ]
+}

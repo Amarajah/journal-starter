@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: journal-api
+  annotations:
+    cert-manager.io/cluster-issuer: __CLUSTER_ISSUER__
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - __PUBLIC_HOST__
+      secretName: journal-api-tls
+  rules:
+    - host: __PUBLIC_HOST__
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: journal-api
+                port:
+                  number: 80

@@ -14,16 +14,9 @@ spec:
     spec:
       containers:
         - name: journal-api
-          image: ghcr.io/amarajah/journal-starter:05a949aedca6467fc9b00ef970500605ed56aed9
-          imagePullPolicy: Always
+          image: journal-api
           ports:
             - containerPort: 8000
-          readinessProbe:
-              httpGet:
-                path: /docs
-                port: 8000
-              initialDelaySeconds: 5
-              periodSeconds: 5
           envFrom:
             - secretRef:
                 name: journal-secrets
@@ -32,3 +25,21 @@ spec:
               value: journal-api
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://adot-collector:4317
+          readinessProbe:
+            httpGet:
+              path: /version
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /version
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi

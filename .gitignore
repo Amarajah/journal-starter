@@ -174,5 +174,7 @@ cython_debug/
 *.tfstate
 *.tfstate.*
 *.tfvars
+crash.log
+crash.*.log
 
 .env.k8s
