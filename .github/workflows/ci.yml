@@ -151,21 +151,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Show OIDC claims (debug, remove afterwards)
-        run: |
-          python3 - <<'PY'
-          import os, json, base64, urllib.request
-          req = urllib.request.Request(
-              os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com",
-              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
-          )
-          token = json.load(urllib.request.urlopen(req))["value"]
-          payload = token.split(".")[1]
-          payload += "=" * (-len(payload) % 4)
-          claims = json.loads(base64.urlsafe_b64decode(payload))
-          print(json.dumps({k: claims.get(k) for k in ("sub", "aud", "repository", "ref", "environment")}, indent=2))
-          PY
-
       - name: Configure AWS credentials (push only)
         if: github.event_name == 'push'
         uses: aws-actions/configure-aws-credentials@v4
@@ -214,22 +199,7 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-                  retry-max-attempts: 1
-
-      - name: Show OIDC claims (debug, remove afterwards)
-        run: |
-          python3 - <<'PY'
-          import os, json, base64, urllib.request
-          req = urllib.request.Request(
-              os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com",
-              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
-          )
-          token = json.load(urllib.request.urlopen(req))["value"]
-          payload = token.split(".")[1]
-          payload += "=" * (-len(payload) % 4)
-          claims = json.loads(base64.urlsafe_b64decode(payload))
-          print(json.dumps({k: claims.get(k) for k in ("sub", "aud", "repository", "ref", "environment")}, indent=2))
-          PY
+          retry-max-attempts: 1
 
       - name: Connect to the cluster
         env:
