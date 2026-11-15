@@ -1,7 +1,7 @@
-variable "github_repo" {
-  description = "GitHub repository allowed to deploy (owner/name, case-sensitive)"
+variable "github_repo_subject" {
+  description = "Repository part of the GitHub OIDC subject, in the immutable owner@id/repo@id format"
   type        = string
-  default     = "Amarajah/journal-starter"
+  default     = "Amarajah@104323769/journal-starter@1413151726"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -30,8 +30,8 @@ data "aws_iam_policy_document" "github_assume" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:Amarajah@104323769/journal-starter@1413151726:ref:refs/heads/main",
-        "repo:${var.github_repo}:environment:production",
+        "repo:${var.github_repo_subject}:ref:refs/heads/main",
+        "repo:${var.github_repo_subject}:environment:production",
       ]
     }
   }
